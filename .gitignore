@@ -1,0 +1,46 @@
+# --- Ambientes Virtuais (Obrigatório) ---
+.venv/
+venv/
+env/
+ENV/
+bin/
+lib/
+include/
+
+# --- Python / Compilação ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Ficheiros indesejados que mencionaste ---
+# Adicionei o 'clivgui' aqui para ele nunca mais ser enviado por erro
+clivgui
+clivgui.exe
+
+# --- IDEs e Editores ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.history/
+
+# --- Logs e Bases de Dados ---
+*.log
+*.sqlite
