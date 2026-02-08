@@ -6,7 +6,7 @@
 
 **CLIV EXTREME** é uma biblioteca Python avançada para criação de menus GUI modernos e overlays transparentes sobre processos do Windows. Perfeita para desenvolvimento de ferramentas de produtividade, utilitários de jogos, dashboards customizados e muito mais.
 
-![CLIV EXTREME Banner](https://via.placeholder.com/800x200/8e44ad/ffffff?text=CLIV+EXTREME)
+![CLIV Banner](https://via.placeholder.com/800x200/8e44ad/ffffff?text=CLIV+EXTREME)
 
 ## ✨ Características Principais
 
@@ -56,13 +56,13 @@
 
 ### Método 1: Via pip (recomendado)
 ```bash
-pip install cliv-extreme
+pip install cliv-gui
 ```
 
 ### Método 2: Instalação manual
 ```bash
-git clone https://github.com/clivteam/cliv-extreme.git
-cd cliv-extreme
+git clone [https://github.com/clivteam/cliv-extreme.git](https://github.com/Nigth613/ClivGui.git)
+cd cliv-gui
 pip install -r requirements.txt
 python setup.py install
 ```
@@ -82,7 +82,7 @@ pystray>=0.19.4
 ### Menu Básico
 
 ```python
-from cliv_extreme_fixed import ClivMenu, ModernButton, ModernCheck
+from cliv_gui import ClivMenu, ModernButton, ModernCheck
 
 # Criar menu
 menu = ClivMenu(
@@ -115,7 +115,7 @@ menu.run("insert")
 ### Process Overlay (ESP/Aimbot Visual)
 
 ```python
-from cliv_extreme_fixed import ProcessOverlay
+from cliv_gui import ProcessOverlay
 
 # Criar overlay para um jogo
 overlay = ProcessOverlay("game.exe", alpha=0.4)
@@ -167,7 +167,7 @@ menu.show_notification(
 ### Audio Player
 
 ```python
-from cliv_extreme_fixed import AudioPlayer
+from cliv_gui import AudioPlayer
 
 # Adicionar player na aba
 audio = AudioPlayer(
@@ -188,7 +188,7 @@ audio.stop_music()
 ### Color Picker
 
 ```python
-from cliv_extreme_fixed import DynamicColorPicker
+from cliv_gui import DynamicColorPicker
 
 # Criar color picker
 color_picker = DynamicColorPicker(
@@ -348,7 +348,7 @@ overlay.run()
 
 ### 3. Dashboard de Sistema
 ```python
-from cliv_extreme_fixed import ModernGraph
+from cliv_gui import ModernGraph
 
 menu = ClivMenu(title="SYSTEM MONITOR", theme_color="#3498db")
 monitor = menu.add_tab("MONITOR")
