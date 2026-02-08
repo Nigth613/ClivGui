@@ -6,7 +6,7 @@
 
 **CLIV EXTREME** é uma biblioteca Python avançada para criação de menus GUI modernos e overlays transparentes sobre processos do Windows. Perfeita para desenvolvimento de ferramentas de produtividade, utilitários de jogos, dashboards customizados e muito mais.
 
-![CLIV Banner](https://via.placeholder.com/800x200/8e44ad/ffffff?text=CLIV+EXTREME](https://github.com/Nigth613/ClivGui/blob/main/cliv_banner.png)
+![CLIV Banner](https://github.com/Nigth613/ClivGui/blob/main/cliv_banner.png)
 
 ## ✨ Características Principais
 
