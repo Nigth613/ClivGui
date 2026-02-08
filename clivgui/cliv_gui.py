@@ -15,43 +15,67 @@ import pygame
 import win32gui
 import win32process
 import psutil
-import ctypes
+from typing import Optional, Callable, Tuple, List, Dict, Any
+from dataclasses import dataclass, field
+
+
+@dataclass
+class WidgetStyle:
+    """Estilo configurável para widgets"""
+    x: int = 0
+    y: int = 0
+    width: Optional[int] = None
+    height: Optional[int] = None
+    bg_color: str = "#1a1a1a"
+    fg_color: str = "white"
+    border_radius: int = 0
+    border_width: int = 0
+    border_color: str = "#555555"
+    padding: Tuple[int, int, int, int] = (10, 10, 10, 10)  # top, right, bottom, left
+    margin: Tuple[int, int, int, int] = (5, 5, 5, 5)
+    font: Tuple[str, int, str] = ("Arial", 9, "normal")
+    anchor: str = "nw"  # nw, n, ne, w, center, e, sw, s, se
+    pack: bool = True  # Se False, usa place() com x, y
+
 
 class ProcessOverlay:
     """Overlay transparente que acompanha a janela de um processo"""
-    def __init__(self, process_name, bg_color="#000000", alpha=0.3):
+
+    def __init__(self, process_name: str, bg_color: str = "#000000", alpha: float = 0.3):
         """
         Args:
             process_name: Nome do processo (ex: "notepad.exe" ou "chrome.exe")
             bg_color: Cor de fundo do overlay
             alpha: Transparência (0.0 a 1.0)
         """
+        if not 0.0 <= alpha <= 1.0:
+            raise ValueError("Alpha deve estar entre 0.0 e 1.0")
+
         self.process_name = process_name
         self.hwnd = None
         self.running = False
         self.alpha = alpha
 
-        # Criar janela overlay
-        self.root = tk.Tk()
-        self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
-        self.root.attributes("-transparentcolor", bg_color)
-        self.root.attributes("-alpha", alpha)
-        self.root.config(bg=bg_color)
+        try:
+            self.root = tk.Tk()
+            self.root.overrideredirect(True)
+            self.root.attributes("-topmost", True)
+            self.root.attributes("-transparentcolor", bg_color)
+            self.root.attributes("-alpha", alpha)
+            self.root.config(bg=bg_color)
 
-        # Canvas para desenho
-        self.canvas = tk.Canvas(
-            self.root,
-            bg=bg_color,
-            highlightthickness=0,
-            bd=0
-        )
-        self.canvas.pack(fill='both', expand=True)
+            self.canvas = tk.Canvas(
+                self.root,
+                bg=bg_color,
+                highlightthickness=0,
+                bd=0
+            )
+            self.canvas.pack(fill='both', expand=True)
+            self.drawings = []
+        except Exception as e:
+            raise RuntimeError(f"Erro ao inicializar overlay: {e}")
 
-        # Desenhos customizados
-        self.drawings = []
-
-    def find_process_window(self):
+    def find_process_window(self) -> Optional[int]:
         """Encontra a janela do processo pelo nome"""
         def callback(hwnd, hwnds):
             if win32gui.IsWindowVisible(hwnd):
@@ -60,15 +84,18 @@ class ProcessOverlay:
                     process = psutil.Process(pid)
                     if process.name().lower() == self.process_name.lower():
                         hwnds.append(hwnd)
-                except:
+                except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
                     pass
             return True
 
         hwnds = []
-        win32gui.EnumWindows(callback, hwnds)
+        try:
+            win32gui.EnumWindows(callback, hwnds)
+        except Exception:
+            return None
         return hwnds[0] if hwnds else None
 
-    def get_window_rect(self, hwnd):
+    def get_window_rect(self, hwnd: int) -> Optional[Tuple[int, int, int, int]]:
         """Obtém posição e tamanho da janela"""
         try:
             rect = win32gui.GetWindowRect(hwnd)
@@ -76,7 +103,7 @@ class ProcessOverlay:
             w = rect[2] - rect[0]
             h = rect[3] - rect[1]
             return x, y, w, h
-        except:
+        except Exception:
             return None
 
     def update_position(self):
@@ -85,12 +112,10 @@ class ProcessOverlay:
             return
 
         try:
-            # Encontrar janela se ainda não foi encontrada
             if not self.hwnd:
                 self.hwnd = self.find_process_window()
 
             if self.hwnd:
-                # Verificar se janela ainda existe
                 if not win32gui.IsWindow(self.hwnd):
                     self.hwnd = self.find_process_window()
 
@@ -99,14 +124,15 @@ class ProcessOverlay:
                     if rect:
                         x, y, w, h = rect
                         self.root.geometry(f"{w}x{h}+{x}+{y}")
-        except:
+        except Exception:
             self.hwnd = None
 
-        # Continuar atualizando
         if self.running:
-            self.root.after(16, self.update_position)  # ~60 FPS
+            self.root.after(16, self.update_position)
 
-    def draw_rectangle(self, x, y, width, height, color="red", thickness=2, fill=None):
+    def draw_rectangle(self, x: int, y: int, width: int, height: int,
+                      color: str = "red", thickness: int = 2,
+                      fill: Optional[str] = None) -> int:
         """Desenha um retângulo no overlay"""
         rect_id = self.canvas.create_rectangle(
             x, y, x + width, y + height,
@@ -117,7 +143,8 @@ class ProcessOverlay:
         self.drawings.append(rect_id)
         return rect_id
 
-    def draw_line(self, x1, y1, x2, y2, color="red", thickness=2):
+    def draw_line(self, x1: int, y1: int, x2: int, y2: int,
+                  color: str = "red", thickness: int = 2) -> int:
         """Desenha uma linha no overlay"""
         line_id = self.canvas.create_line(
             x1, y1, x2, y2,
@@ -127,7 +154,9 @@ class ProcessOverlay:
         self.drawings.append(line_id)
         return line_id
 
-    def draw_circle(self, x, y, radius, color="red", thickness=2, fill=None):
+    def draw_circle(self, x: int, y: int, radius: int,
+                    color: str = "red", thickness: int = 2,
+                    fill: Optional[str] = None) -> int:
         """Desenha um círculo no overlay"""
         circle_id = self.canvas.create_oval(
             x - radius, y - radius,
@@ -139,7 +168,9 @@ class ProcessOverlay:
         self.drawings.append(circle_id)
         return circle_id
 
-    def draw_text(self, x, y, text, color="white", font=("Arial", 12, "bold")):
+    def draw_text(self, x: int, y: int, text: str,
+                  color: str = "white",
+                  font: Tuple[str, int, str] = ("Arial", 12, "bold")) -> int:
         """Desenha texto no overlay"""
         text_id = self.canvas.create_text(
             x, y,
@@ -150,11 +181,10 @@ class ProcessOverlay:
         self.drawings.append(text_id)
         return text_id
 
-    def draw_crosshair(self, x, y, size=20, color="lime", thickness=2):
+    def draw_crosshair(self, x: int, y: int, size: int = 20,
+                       color: str = "lime", thickness: int = 2):
         """Desenha uma mira (crosshair) no overlay"""
-        # Linha horizontal
         self.draw_line(x - size, y, x + size, y, color, thickness)
-        # Linha vertical
         self.draw_line(x, y - size, x, y + size, color, thickness)
 
     def clear_drawings(self):
@@ -162,38 +192,36 @@ class ProcessOverlay:
         for drawing_id in self.drawings:
             try:
                 self.canvas.delete(drawing_id)
-            except:
+            except Exception:
                 pass
         self.drawings.clear()
 
-    def delete_drawing(self, drawing_id):
+    def delete_drawing(self, drawing_id: int):
         """Remove um desenho específico"""
         try:
             self.canvas.delete(drawing_id)
             if drawing_id in self.drawings:
                 self.drawings.remove(drawing_id)
-        except:
+        except Exception:
             pass
 
-    def set_alpha(self, alpha):
+    def set_alpha(self, alpha: float):
         """Define a transparência do overlay (0.0 a 1.0)"""
-        self.alpha = max(0.0, min(1.0, alpha))
+        if not 0.0 <= alpha <= 1.0:
+            raise ValueError("Alpha deve estar entre 0.0 e 1.0")
+        self.alpha = alpha
         self.root.attributes("-alpha", self.alpha)
 
-    def start(self):
+    def start(self) -> bool:
         """Inicia o overlay"""
         self.running = True
-
-        # Procurar janela do processo
         self.hwnd = self.find_process_window()
 
         if not self.hwnd:
             print(f"Processo '{self.process_name}' não encontrado!")
             return False
 
-        # Iniciar atualização de posição
         self.update_position()
-
         return True
 
     def stop(self):
@@ -201,7 +229,7 @@ class ProcessOverlay:
         self.running = False
         try:
             self.root.destroy()
-        except:
+        except Exception:
             pass
 
     def run(self):
@@ -211,18 +239,24 @@ class ProcessOverlay:
 
 
 class NotificationManager:
-    """Gerenciador de notificações estilo Roblox - CORRIGIDO"""
+    """Gerenciador de notificações estilo Roblox"""
+
     def __init__(self):
-        self.notifications = []
-        self.notification_windows = []
+        self.notifications: List[tk.Toplevel] = []
+        self.notification_windows: List[tk.Toplevel] = []
         self.lock = threading.Lock()
 
-    def show(self, title, message, duration=3000, notification_type="info"):
+    def show(self, title: str, message: str, duration: int = 3000,
+             notification_type: str = "info") -> tk.Toplevel:
         """
         Mostra uma notificação no canto inferior direito
-        tipos: 'info', 'success', 'warning', 'error'
+
+        Args:
+            title: Título da notificação
+            message: Mensagem da notificação
+            duration: Duração em milissegundos
+            notification_type: Tipo ('info', 'success', 'warning', 'error')
         """
-        # Cores baseadas no tipo
         colors = {
             'info': '#3498db',
             'success': '#2ecc71',
@@ -232,134 +266,118 @@ class NotificationManager:
 
         color = colors.get(notification_type, '#3498db')
 
-        # Criar janela de notificação
-        notif = tk.Toplevel()
-        notif.overrideredirect(True)
-        notif.attributes("-topmost", True)
-        notif.attributes("-alpha", 0.0)  # Começa invisível
+        try:
+            notif = tk.Toplevel()
+            notif.overrideredirect(True)
+            notif.attributes("-topmost", True)
+            notif.attributes("-alpha", 0.0)
 
-        # Configurar posição (canto inferior direito)
-        screen_width = notif.winfo_screenwidth()
-        screen_height = notif.winfo_screenheight()
+            screen_width = notif.winfo_screenwidth()
+            screen_height = notif.winfo_screenheight()
 
-        width = 320
-        height = 90
+            width = 320
+            height = 90
 
-        # Calcular posição Y baseado em quantas notificações já existem
-        with self.lock:
-            offset = len(self.notification_windows) * (height + 10)
+            with self.lock:
+                offset = len(self.notification_windows) * (height + 10)
 
-        x = screen_width - width - 20
-        y = screen_height - height - 60 - offset
+            x = screen_width - width - 20
+            y = screen_height - height - 60 - offset
 
-        notif.geometry(f"{width}x{height}+{x}+{y}")
+            notif.geometry(f"{width}x{height}+{x}+{y}")
 
-        # Frame principal com borda
-        main_frame = tk.Frame(notif, bg=color, bd=0)
-        main_frame.pack(fill='both', expand=True, padx=2, pady=2)
+            main_frame = tk.Frame(notif, bg=color, bd=0)
+            main_frame.pack(fill='both', expand=True, padx=2, pady=2)
 
-        inner_frame = tk.Frame(main_frame, bg="#1a1a1a", bd=0)
-        inner_frame.pack(fill='both', expand=True)
+            inner_frame = tk.Frame(main_frame, bg="#1a1a1a", bd=0)
+            inner_frame.pack(fill='both', expand=True)
 
-        # Header com título
-        header = tk.Frame(inner_frame, bg=color, height=30, bd=0)
-        header.pack(fill='x', side='top')
-        header.pack_propagate(False)
+            header = tk.Frame(inner_frame, bg=color, height=30, bd=0)
+            header.pack(fill='x', side='top')
+            header.pack_propagate(False)
 
-        tk.Label(header, text=title.upper(), bg=color, fg="white",
-                font=("Arial", 9, "bold")).pack(side='left', padx=10, pady=5)
+            tk.Label(header, text=title.upper(), bg=color, fg="white",
+                    font=("Arial", 9, "bold")).pack(side='left', padx=10, pady=5)
 
-        # Botão fechar
-        close_btn = tk.Label(header, text="✕", bg=color, fg="white",
-                            font=("Arial", 10), cursor="hand2")
-        close_btn.pack(side='right', padx=10)
-        close_btn.bind("<Button-1>", lambda e: self._close_notification(notif))
+            close_btn = tk.Label(header, text="✕", bg=color, fg="white",
+                                font=("Arial", 10), cursor="hand2")
+            close_btn.pack(side='right', padx=10)
+            close_btn.bind("<Button-1>", lambda e: self._close_notification(notif))
 
-        # Mensagem
-        msg_frame = tk.Frame(inner_frame, bg="#1a1a1a", bd=0)
-        msg_frame.pack(fill='both', expand=True, padx=10, pady=5)
+            msg_frame = tk.Frame(inner_frame, bg="#1a1a1a", bd=0)
+            msg_frame.pack(fill='both', expand=True, padx=10, pady=5)
 
-        tk.Label(msg_frame, text=message, bg="#1a1a1a", fg="white",
-                font=("Arial", 8), wraplength=280, justify='left').pack(anchor='w')
+            tk.Label(msg_frame, text=message, bg="#1a1a1a", fg="white",
+                    font=("Arial", 8), wraplength=280, justify='left').pack(anchor='w')
 
-        # Barra de progresso
-        progress_canvas = tk.Canvas(inner_frame, height=3, bg="#1a1a1a",
-                                   highlightthickness=0, bd=0)
-        progress_canvas.pack(fill='x', side='bottom')
+            progress_canvas = tk.Canvas(inner_frame, height=3, bg="#1a1a1a",
+                                       highlightthickness=0, bd=0)
+            progress_canvas.pack(fill='x', side='bottom')
 
-        progress_bar = progress_canvas.create_rectangle(0, 0, width, 3,
-                                                        fill=color, outline="")
+            progress_bar = progress_canvas.create_rectangle(0, 0, width, 3,
+                                                            fill=color, outline="")
 
-        with self.lock:
-            self.notification_windows.append(notif)
+            with self.lock:
+                self.notification_windows.append(notif)
 
-        # Animação de entrada (slide + fade)
-        self._animate_in(notif, x, y, width)
+            self._animate_in(notif, x, y, width)
+            self._start_progress_fixed(notif, progress_canvas, progress_bar,
+                                       duration, width, color)
 
-        # Iniciar timer de progresso - CORRIGIDO
-        self._start_progress_fixed(notif, progress_canvas, progress_bar,
-                                   duration, width, color)
+            return notif
+        except Exception as e:
+            print(f"Erro ao criar notificação: {e}")
+            return None
 
-        return notif
-
-    def _start_progress_fixed(self, window, canvas, bar, duration, width, color):
-        """Anima a barra de progresso - VERSÃO CORRIGIDA"""
+    def _start_progress_fixed(self, window: tk.Toplevel, canvas: tk.Canvas,
+                             bar: int, duration: int, width: int, color: str):
+        """Anima a barra de progresso"""
         start_time = time.time()
-        closed = {'value': False}  # Usar dicionário para evitar problemas de escopo
-        after_ids = []  # Rastrear IDs de callbacks
+        closed = {'value': False}
+        after_ids = []
 
         def update():
-            # Verificar se foi fechada manualmente
             if closed['value']:
                 return
 
             try:
-                # Verificar se janela ainda existe
                 if not window.winfo_exists():
                     closed['value'] = True
                     return
-            except:
+            except Exception:
                 closed['value'] = True
                 return
 
-            # Calcular progresso
             elapsed = (time.time() - start_time) * 1000
             progress = min(elapsed / duration, 1.0)
 
             try:
-                # Atualizar barra
                 remaining_width = width * (1 - progress)
                 canvas.coords(bar, 0, 0, remaining_width, 3)
-            except:
+            except Exception:
                 closed['value'] = True
                 return
 
-            # Continuar ou fechar
             if progress < 1.0:
-                # Agendar próxima atualização
                 after_id = window.after(16, update)
                 after_ids.append(after_id)
             else:
-                # Tempo acabou, fechar
                 closed['value'] = True
                 self._close_notification(window)
 
-        # Função para cancelar ao fechar manualmente
         def cancel_updates():
             closed['value'] = True
             for after_id in after_ids:
                 try:
                     window.after_cancel(after_id)
-                except:
+                except Exception:
                     pass
 
-        # Associar cancelamento ao botão X
         window.cancel_progress = cancel_updates
-
-        # Iniciar loop
         update()
 
-    def _animate_in(self, window, target_x, target_y, width):
+    def _animate_in(self, window: tk.Toplevel, target_x: int,
+                    target_y: int, width: int):
         """Animação de entrada (slide da direita + fade)"""
         start_x = target_x + width
         steps = 15
@@ -371,7 +389,6 @@ class NotificationManager:
                     return
 
                 if step <= steps:
-                    # Calcular posições e alpha
                     progress = step / steps
                     current_x = start_x - (start_x - target_x) * self._ease_out_cubic(progress)
                     alpha = progress * 0.95
@@ -380,12 +397,12 @@ class NotificationManager:
                     window.attributes("-alpha", alpha)
 
                     window.after(delay, lambda: animate(step + 1))
-            except:
+            except Exception:
                 pass
 
         animate()
 
-    def _animate_out(self, window, callback=None):
+    def _animate_out(self, window: tk.Toplevel, callback: Optional[Callable] = None):
         """Animação de saída (slide para direita + fade)"""
         try:
             if not window.winfo_exists():
@@ -418,36 +435,37 @@ class NotificationManager:
                     else:
                         if callback:
                             callback()
-                except:
+                except Exception:
                     if callback:
                         callback()
 
             animate()
-        except:
+        except Exception:
             if callback:
                 callback()
 
-    def _ease_out_cubic(self, t):
+    @staticmethod
+    def _ease_out_cubic(t: float) -> float:
         """Easing function para animação suave"""
         return 1 - pow(1 - t, 3)
 
-    def _ease_in_cubic(self, t):
+    @staticmethod
+    def _ease_in_cubic(t: float) -> float:
         """Easing function para animação suave"""
         return t * t * t
 
-    def _close_notification(self, window):
+    def _close_notification(self, window: tk.Toplevel):
         """Fecha a notificação com animação"""
         try:
             if not window.winfo_exists():
                 return
-        except:
+        except Exception:
             return
 
-        # Cancelar progresso se existir
         if hasattr(window, 'cancel_progress'):
             try:
                 window.cancel_progress()
-            except:
+            except Exception:
                 pass
 
         with self.lock:
@@ -458,39 +476,38 @@ class NotificationManager:
             try:
                 if window.winfo_exists():
                     window.destroy()
-            except:
+            except Exception:
                 pass
 
-            # Reposicionar após pequeno delay
             if self.notification_windows:
                 try:
-                    # Usar primeira notificação válida para agendar reposicionamento
-                    valid_windows = [w for w in self.notification_windows if self._is_window_valid(w)]
+                    valid_windows = [w for w in self.notification_windows
+                                   if self._is_window_valid(w)]
                     if valid_windows:
                         valid_windows[0].after(50, self._reposition_notifications)
-                except:
+                except Exception:
                     pass
 
         self._animate_out(window, destroy)
 
-    def _is_window_valid(self, window):
+    @staticmethod
+    def _is_window_valid(window: tk.Toplevel) -> bool:
         """Verifica se janela ainda é válida"""
         try:
             return window.winfo_exists()
-        except:
+        except Exception:
             return False
 
     def _reposition_notifications(self):
         """Reposiciona notificações após fechamento"""
         try:
             with self.lock:
-                # Filtrar apenas janelas válidas
-                self.notification_windows = [w for w in self.notification_windows if self._is_window_valid(w)]
+                self.notification_windows = [w for w in self.notification_windows
+                                           if self._is_window_valid(w)]
 
                 if not self.notification_windows:
                     return
 
-                # Obter dimensões da tela
                 first_notif = self.notification_windows[0]
                 screen_height = first_notif.winfo_screenheight()
                 screen_width = first_notif.winfo_screenwidth()
@@ -503,14 +520,13 @@ class NotificationManager:
                             x = screen_width - 320 - 20
                             y = screen_height - height - 60 - offset
 
-                            # Animação suave para reposicionamento
                             self._smooth_move(notif, y)
-                    except:
+                    except Exception:
                         continue
-        except:
+        except Exception:
             pass
 
-    def _smooth_move(self, window, target_y):
+    def _smooth_move(self, window: tk.Toplevel, target_y: int):
         """Move suavemente a janela para nova posição Y"""
         try:
             if not self._is_window_valid(window):
@@ -526,188 +542,215 @@ class NotificationManager:
             new_y = current_y + diff * 0.3
             window.geometry(f"+{window.winfo_x()}+{int(new_y)}")
             window.after(16, lambda: self._smooth_move(window, target_y))
-        except:
+        except Exception:
             pass
 
 
 class MessageBox:
-    """MessageBox personalizado estilo CLIV (sem bordas do Windows)"""
+    """MessageBox personalizado estilo CLIV"""
+
     @staticmethod
-    def show(title, message, msg_type="info", theme_color="#8e44ad"):
+    def show(title: str, message: str, msg_type: str = "info",
+             theme_color: str = "#8e44ad") -> None:
         """
         Mostra um messagebox personalizado
-        tipos: 'info', 'success', 'warning', 'error', 'question'
+
+        Args:
+            title: Título da janela
+            message: Mensagem a ser exibida
+            msg_type: Tipo ('info', 'success', 'warning', 'error', 'question')
+            theme_color: Cor do tema
         """
-        box = tk.Toplevel()
-        box.overrideredirect(True)  # Remove bordas do Windows
-        box.geometry("420x220")
-        box.configure(bg="#05050a")
-        box.attributes("-topmost", True)
+        try:
+            box = tk.Toplevel()
+            box.overrideredirect(True)
+            box.geometry("420x220")
+            box.configure(bg="#05050a")
+            box.attributes("-topmost", True)
 
-        # Centralizar na tela
-        box.update_idletasks()
-        x = (box.winfo_screenwidth() // 2) - (420 // 2)
-        y = (box.winfo_screenheight() // 2) - (220 // 2)
-        box.geometry(f"420x220+{x}+{y}")
+            box.update_idletasks()
+            x = (box.winfo_screenwidth() // 2) - (420 // 2)
+            y = (box.winfo_screenheight() // 2) - (220 // 2)
+            box.geometry(f"420x220+{x}+{y}")
 
-        # Cores baseadas no tipo
-        colors = {
-            'info': '#3498db',
-            'success': '#2ecc71',
-            'warning': '#f39c12',
-            'error': '#e74c3c',
-            'question': '#9b59b6'
-        }
+            colors = {
+                'info': '#3498db',
+                'success': '#2ecc71',
+                'warning': '#f39c12',
+                'error': '#e74c3c',
+                'question': '#9b59b6'
+            }
 
-        icons = {
-            'info': 'ℹ',
-            'success': '✓',
-            'warning': '⚠',
-            'error': '✕',
-            'question': '?'
-        }
+            icons = {
+                'info': 'ℹ',
+                'success': '✓',
+                'warning': '⚠',
+                'error': '✕',
+                'question': '?'
+            }
 
-        color = colors.get(msg_type, theme_color)
-        icon = icons.get(msg_type, 'ℹ')
+            color = colors.get(msg_type, theme_color)
+            icon = icons.get(msg_type, 'ℹ')
 
-        # Header (igual ao menu principal)
-        header = tk.Frame(box, bg=color, height=35, bd=0)
-        header.pack(fill='x', side='top')
-        header.pack_propagate(False)
+            header = tk.Frame(box, bg=color, height=35, bd=0)
+            header.pack(fill='x', side='top')
+            header.pack_propagate(False)
 
-        # Ícone + Título
-        title_frame = tk.Frame(header, bg=color)
-        title_frame.pack(side='left', fill='y', padx=10)
+            title_frame = tk.Frame(header, bg=color)
+            title_frame.pack(side='left', fill='y', padx=10)
 
-        tk.Label(title_frame, text=icon, bg=color, fg="white",
-                font=("Arial", 14, "bold")).pack(side='left', padx=(0, 8))
-        tk.Label(title_frame, text=title.upper(), bg=color, fg="white",
-                font=("Impact", 10)).pack(side='left')
+            tk.Label(title_frame, text=icon, bg=color, fg="white",
+                    font=("Arial", 14, "bold")).pack(side='left', padx=(0, 8))
+            tk.Label(title_frame, text=title.upper(), bg=color, fg="white",
+                    font=("Impact", 10)).pack(side='left')
 
-        # Botão fechar (X)
-        close_btn = tk.Button(header, text="✕", command=box.destroy,
-                             bg=color, fg="white", bd=0, width=5,
-                             activebackground="#ff4444", cursor="hand2",
-                             font=("Arial", 10))
-        close_btn.pack(side='right', fill='y')
+            close_btn = tk.Button(header, text="✕", command=box.destroy,
+                                 bg=color, fg="white", bd=0, width=5,
+                                 activebackground="#ff4444", cursor="hand2",
+                                 font=("Arial", 10))
+            close_btn.pack(side='right', fill='y')
 
-        # Permitir arrastar pela header
-        def start_move(event):
-            box.x = event.x
-            box.y = event.y
+            def start_move(event):
+                box.x = event.x
+                box.y = event.y
 
-        def on_move(event):
-            deltax = event.x - box.x
-            deltay = event.y - box.y
-            new_x = box.winfo_x() + deltax
-            new_y = box.winfo_y() + deltay
-            box.geometry(f"+{new_x}+{new_y}")
+            def on_move(event):
+                deltax = event.x - box.x
+                deltay = event.y - box.y
+                new_x = box.winfo_x() + deltax
+                new_y = box.winfo_y() + deltay
+                box.geometry(f"+{new_x}+{new_y}")
 
-        header.bind("<Button-1>", start_move)
-        header.bind("<B1-Motion>", on_move)
-        title_frame.bind("<Button-1>", start_move)
-        title_frame.bind("<B1-Motion>", on_move)
+            header.bind("<Button-1>", start_move)
+            header.bind("<B1-Motion>", on_move)
+            title_frame.bind("<Button-1>", start_move)
+            title_frame.bind("<B1-Motion>", on_move)
 
-        # Corpo da mensagem
-        body = tk.Frame(box, bg="#05050a", bd=0)
-        body.pack(fill='both', expand=True, padx=25, pady=20)
+            body = tk.Frame(box, bg="#05050a", bd=0)
+            body.pack(fill='both', expand=True, padx=25, pady=20)
 
-        # Mensagem com scroll se necessário
-        msg_label = tk.Label(body, text=message, bg="#05050a", fg="white",
-                            font=("Arial", 9), wraplength=370, justify='left')
-        msg_label.pack(expand=True)
+            msg_label = tk.Label(body, text=message, bg="#05050a", fg="white",
+                                font=("Arial", 9), wraplength=370, justify='left')
+            msg_label.pack(expand=True)
 
-        # Botão OK
-        btn_frame = tk.Frame(box, bg="#05050a", bd=0)
-        btn_frame.pack(fill='x', padx=25, pady=(0, 20))
+            btn_frame = tk.Frame(box, bg="#05050a", bd=0)
+            btn_frame.pack(fill='x', padx=25, pady=(0, 20))
 
-        ok_btn = tk.Button(btn_frame, text="OK", bg=color, fg="white",
-                          font=("Arial", 9, "bold"), bd=0, width=18,
-                          command=box.destroy, cursor="hand2",
-                          activebackground=color, activeforeground="white",
-                          relief='flat')
-        ok_btn.pack(side='right', ipady=8)
+            ok_btn = tk.Button(btn_frame, text="OK", bg=color, fg="white",
+                              font=("Arial", 9, "bold"), bd=0, width=18,
+                              command=box.destroy, cursor="hand2",
+                              activebackground=color, activeforeground="white",
+                              relief='flat')
+            ok_btn.pack(side='right', ipady=8)
 
-        # Efeito hover
-        def on_enter(e):
-            ok_btn.config(relief='raised')
-        def on_leave(e):
-            ok_btn.config(relief='flat')
+            def on_enter(e):
+                ok_btn.config(relief='raised')
 
-        ok_btn.bind("<Enter>", on_enter)
-        ok_btn.bind("<Leave>", on_leave)
+            def on_leave(e):
+                ok_btn.config(relief='flat')
 
-        # Animação de entrada (fade in)
-        box.attributes("-alpha", 0.0)
+            ok_btn.bind("<Enter>", on_enter)
+            ok_btn.bind("<Leave>", on_leave)
 
-        def fade_in(alpha=0.0):
-            if alpha < 0.95:
-                alpha += 0.1
-                box.attributes("-alpha", alpha)
-                box.after(20, lambda: fade_in(alpha))
+            box.attributes("-alpha", 0.0)
 
-        box.after(10, fade_in)
+            def fade_in(alpha=0.0):
+                if alpha < 0.95:
+                    alpha += 0.1
+                    box.attributes("-alpha", alpha)
+                    box.after(20, lambda: fade_in(alpha))
 
-        box.grab_set()
-        box.focus_force()
-        box.wait_window()
+            box.after(10, fade_in)
+
+            box.grab_set()
+            box.focus_force()
+            box.wait_window()
+        except Exception as e:
+            print(f"Erro ao mostrar messagebox: {e}")
 
 
 class ClivMenu:
-    def __init__(self, title="CLIV1 EXTREME", theme_color="#8e44ad", bg_img_path=None,
-                 part_color="white", part_count=40, part_speed=(0.2, 0.8),
-                 enable_tray_icon=False, tray_icon_path=None):
+    """Menu principal CLIV melhorado"""
+
+    def __init__(self, title: str = "CLIV1 EXTREME", theme_color: str = "#8e44ad",
+                 bg_img_path: Optional[str] = None, width: int = 450, height: int = 720,
+                 part_color: str = "white", part_count: int = 40,
+                 part_speed: Tuple[float, float] = (0.2, 0.8),
+                 enable_tray_icon: bool = False, tray_icon_path: Optional[str] = None,
+                 enable_tabs: bool = True):
+        """
+        Inicializa o menu CLIV
+
+        Args:
+            title: Título da janela
+            theme_color: Cor do tema
+            bg_img_path: Caminho para imagem de fundo
+            width: Largura da janela
+            height: Altura da janela
+            part_color: Cor das partículas
+            part_count: Quantidade de partículas
+            part_speed: Range de velocidade das partículas
+            enable_tray_icon: Habilita ícone na bandeja
+            tray_icon_path: Caminho para ícone da bandeja
+            enable_tabs: Habilita sistema de abas
+        """
         self.root = tk.Tk()
         self.theme = theme_color
         self.bg_color = "#05050a"
-        self.data = {}
-        self.abas = {}
-        self.botoes_abas = {}
-        self.aba_atual = None
+        self.data: Dict[str, Any] = {}
+        self.abas: Dict[str, Dict] = {}
+        self.botoes_abas: Dict[str, tk.Button] = {}
+        self.aba_atual: Optional[str] = None
         self.aberto = True
         self.bg_img_path = bg_img_path
         self.title = title
+        self.width = width
+        self.height = height
+        self.enable_tabs = enable_tabs
 
-        # Configuração de Partículas
         self.p_color = part_color
         self.p_count = part_count
         self.p_speed_range = part_speed
 
-        # Sistema de Notificações
         self.notif_manager = NotificationManager()
 
-        # System Tray Icon
         self.enable_tray = enable_tray_icon
         self.tray_icon_path = tray_icon_path
         self.tray_icon = None
         self.tray_thread = None
 
-        # Inicializar Áudio
+        # Container principal direto (sem abas por padrão)
+        self.main_container = None
+
         try:
             pygame.mixer.init()
-        except:
+        except Exception:
             pass
 
         self._setup_main_ui(title)
         self._init_particles()
 
-        # Inicializar tray icon se habilitado
         if self.enable_tray:
             self._init_tray_icon()
 
-    def _setup_main_ui(self, title):
-        self.root.geometry("450x720")
+    def _setup_main_ui(self, title: str):
+        """Configura a interface principal"""
+        self.root.geometry(f"{self.width}x{self.height}")
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.config(bg=self.bg_color)
 
-        # Canvas de Fundo (Camada 0)
-        self.bg_canvas = tk.Canvas(self.root, highlightthickness=0, bg=self.bg_color, bd=0)
+        # Canvas de fundo
+        self.bg_canvas = tk.Canvas(self.root, highlightthickness=0,
+                                   bg=self.bg_color, bd=0)
         self.bg_canvas.place(x=0, y=0, relwidth=1, relheight=1)
 
+        # Carregar imagem de fundo se especificada
         if self.bg_img_path and os.path.exists(self.bg_img_path):
             try:
-                img = Image.open(self.bg_img_path).resize((450, 720), Image.Resampling.LANCZOS)
+                img = Image.open(self.bg_img_path).resize(
+                    (self.width, self.height), Image.Resampling.LANCZOS
+                )
                 img = ImageEnhance.Brightness(img).enhance(0.15)
                 self.bg_photo = ImageTk.PhotoImage(img)
                 self.bg_canvas.create_image(0, 0, image=self.bg_photo, anchor="nw")
@@ -722,13 +765,11 @@ class ClivMenu:
         tk.Label(self.header, text=title, bg=self.theme, fg="white",
                 font=("Impact", 11)).pack(side='left', padx=15)
 
-        # Botão minimizar
         min_btn = tk.Button(self.header, text="−", command=self.toggle_visibility,
                            bg=self.theme, fg="white", bd=0, width=5,
                            activebackground="#555", cursor="hand2")
         min_btn.pack(side='right', fill='y')
 
-        # Botão fechar
         close_btn = tk.Button(self.header, text="✕", command=self._on_close,
                              bg=self.theme, fg="white", bd=0, width=5,
                              activebackground="#ff4444", cursor="hand2")
@@ -737,42 +778,158 @@ class ClivMenu:
         self.header.bind("<Button-1>", self._start_move)
         self.header.bind("<B1-Motion>", self._on_move)
 
-        # Barra de Abas
-        self.tab_bar = tk.Frame(self.root, bg="#000", height=35, bd=0)
-        self.tab_bar.pack(fill='x', side='top')
-        self.tab_bar.pack_propagate(False)
+        # Barra de abas (opcional)
+        if self.enable_tabs:
+            self.tab_bar = tk.Frame(self.root, bg="#000", height=35, bd=0)
+            self.tab_bar.pack(fill='x', side='top')
+            self.tab_bar.pack_propagate(False)
 
-        # Container principal para abas
-        self.container_principal = tk.Frame(self.root, bg=self.bg_color, bd=0)
-        self.container_principal.place(x=0, y=70, width=450, height=650)
+            self.container_principal = tk.Frame(self.root, bg=self.bg_color, bd=0)
+            self.container_principal.place(x=0, y=70, width=self.width,
+                                         height=self.height - 70)
+        else:
+            self.tab_bar = None
+            # Container principal sem abas
+            self.container_principal = tk.Frame(self.root, bg=self.bg_color, bd=0)
+            self.container_principal.place(x=0, y=35, width=self.width,
+                                         height=self.height - 35)
+
+            # Criar container scrollável direto
+            self.main_container = self._create_scrollable_container(
+                self.container_principal
+            )
+
+    def _create_scrollable_container(self, parent: tk.Frame) -> tk.Frame:
+        """Cria um container com scroll"""
+        frame_container = tk.Frame(parent, bg=self.bg_color, bd=0)
+        frame_container.pack(fill='both', expand=True)
+
+        canvas = tk.Canvas(frame_container, bg=self.bg_color,
+                          highlightthickness=0, bd=0)
+
+        scrollbar_frame = tk.Frame(frame_container, bg=self.bg_color,
+                                  width=8, bd=0)
+        scrollbar_canvas = tk.Canvas(scrollbar_frame, bg="#0a0a15", width=8,
+                                    highlightthickness=0, bd=0)
+        scrollbar_canvas.pack(fill='both', expand=True)
+
+        scroll_data = {
+            'dragging': False,
+            'start_y': 0,
+            'thumb': None,
+            'thumb_y': 0,
+            'thumb_height': 100
+        }
+
+        def update_scrollbar(*args):
+            try:
+                first, last = canvas.yview()
+                canvas_height = scrollbar_canvas.winfo_height()
+
+                if canvas_height < 10:
+                    return
+
+                visible_ratio = last - first
+                thumb_height = max(30, canvas_height * visible_ratio)
+                thumb_y = first * canvas_height
+
+                scrollbar_canvas.delete("all")
+
+                scrollbar_canvas.create_rectangle(
+                    1, 0, 7, canvas_height,
+                    fill="#0a0a15", outline=""
+                )
+
+                scrollbar_canvas.create_rectangle(
+                    1, thumb_y, 7, thumb_y + thumb_height,
+                    fill=self.theme, outline="", tags="thumb"
+                )
+
+                scroll_data['thumb_height'] = thumb_height
+                scroll_data['thumb_y'] = thumb_y
+
+            except Exception:
+                pass
+
+        def on_scroll_click(event):
+            scroll_data['dragging'] = True
+            scroll_data['start_y'] = event.y
+
+        def on_scroll_drag(event):
+            if scroll_data['dragging']:
+                canvas_height = scrollbar_canvas.winfo_height()
+                if canvas_height < 10:
+                    return
+
+                delta = event.y - scroll_data['start_y']
+                new_y = scroll_data['thumb_y'] + delta
+
+                max_y = canvas_height - scroll_data['thumb_height']
+                new_y = max(0, min(new_y, max_y))
+
+                fraction = new_y / canvas_height
+                canvas.yview_moveto(fraction)
+                scroll_data['start_y'] = event.y
+
+        def on_scroll_release(event):
+            scroll_data['dragging'] = False
+
+        scrollbar_canvas.bind("<Button-1>", on_scroll_click)
+        scrollbar_canvas.bind("<B1-Motion>", on_scroll_drag)
+        scrollbar_canvas.bind("<ButtonRelease-1>", on_scroll_release)
+
+        canvas.configure(yscrollcommand=lambda f, l: (update_scrollbar(f, l), None)[-1])
+
+        scrollable_frame = tk.Frame(canvas, bg=self.bg_color, bd=0)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: (canvas.configure(scrollregion=canvas.bbox("all")),
+                      update_scrollbar())
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+        def _on_mousewheel(event):
+            try:
+                canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+                update_scrollbar()
+            except Exception:
+                pass
+
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        scrollbar_frame.pack(side="right", fill="y", padx=(2, 0))
+        canvas.pack(side="left", fill="both", expand=True)
+
+        frame_container.after(100, update_scrollbar)
+
+        return scrollable_frame
 
     def _init_particles(self):
-        """Inicializa sistema de partículas com melhorias"""
+        """Inicializa sistema de partículas"""
         self.particles = []
         for _ in range(self.p_count):
             self.particles.append({
                 'id': self.bg_canvas.create_oval(0, 0, 2, 2, fill=self.p_color, outline=""),
-                'x': random.randint(0, 450),
-                'y': random.randint(0, 720),
+                'x': random.randint(0, self.width),
+                'y': random.randint(0, self.height),
                 'speed': random.uniform(self.p_speed_range[0], self.p_speed_range[1]),
                 'opacity': random.uniform(0.3, 1.0)
             })
         self._update_particles()
 
     def _init_tray_icon(self):
-        """Inicializa o ícone na system tray (Windows)"""
+        """Inicializa o ícone na system tray"""
         try:
             from pystray import Icon, Menu, MenuItem
-            from PIL import Image, ImageDraw
 
-            # Criar ícone se não foi fornecido
             if self.tray_icon_path and os.path.exists(self.tray_icon_path):
                 icon_image = Image.open(self.tray_icon_path)
             else:
-                # Criar ícone padrão (círculo colorido)
                 icon_image = self._create_default_icon()
 
-            # Criar menu do tray
             menu = Menu(
                 MenuItem('Mostrar/Ocultar', self.toggle_visibility, default=True),
                 MenuItem('Notificação de Teste', self._tray_test_notification),
@@ -780,7 +937,6 @@ class ClivMenu:
                 MenuItem('Fechar', self._tray_quit)
             )
 
-            # Criar ícone
             self.tray_icon = Icon(
                 name=self.title,
                 icon=icon_image,
@@ -788,11 +944,9 @@ class ClivMenu:
                 menu=menu
             )
 
-            # Rodar em thread separada
             self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
             self.tray_thread.start()
 
-            # Notificação de sucesso
             self.root.after(800, lambda: self.show_notification(
                 "System Tray",
                 "Ícone adicionado à bandeja do sistema!",
@@ -810,21 +964,16 @@ class ClivMenu:
         except Exception as e:
             print(f"Erro ao criar tray icon: {e}")
 
-    def _create_default_icon(self):
-        """Cria um ícone padrão caso não seja fornecido"""
-        # Criar imagem 64x64
+    def _create_default_icon(self) -> Image.Image:
+        """Cria um ícone padrão"""
         image = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
 
-        # Desenhar círculo com a cor do tema
-        # Converter hex para RGB
         hex_color = self.theme.lstrip('#')
         rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
-        # Círculo externo
         draw.ellipse([4, 4, 60, 60], fill=rgb, outline=(255, 255, 255))
 
-        # Círculo interno (destaque)
         lighter = tuple(min(c + 50, 255) for c in rgb)
         draw.ellipse([16, 16, 48, 48], fill=lighter)
 
@@ -846,7 +995,7 @@ class ClivMenu:
         self._on_close()
 
     def _update_particles(self):
-        """Atualiza partículas com efeito de fade"""
+        """Atualiza partículas"""
         if not self.aberto or not self.root.winfo_exists():
             return
 
@@ -854,151 +1003,49 @@ class ClivMenu:
             for p in self.particles:
                 p['y'] -= p['speed']
                 if p['y'] < 0:
-                    p['y'] = 720
-                    p['x'] = random.randint(0, 450)
+                    p['y'] = self.height
+                    p['x'] = random.randint(0, self.width)
 
-                # Atualizar posição
-                self.bg_canvas.coords(p['id'], p['x'], p['y'], p['x']+2, p['y']+2)
+                self.bg_canvas.coords(p['id'], p['x'], p['y'],
+                                     p['x']+2, p['y']+2)
 
             self.root.after(30, self._update_particles)
-        except:
+        except Exception:
             pass
 
-    def add_tab(self, name):
-        """Adiciona uma nova aba ao menu"""
-        # Frame com scrollbar CUSTOMIZADO
-        frame_container = tk.Frame(self.container_principal, bg=self.bg_color, bd=0)
+    def get_container(self) -> tk.Frame:
+        """
+        Retorna o container principal para adicionar widgets.
+        Se tabs estiverem desabilitadas, retorna o container direto.
+        Se tabs estiverem habilitadas mas nenhuma foi criada, cria uma aba padrão.
+        """
+        if not self.enable_tabs:
+            return self.main_container
 
-        canvas = tk.Canvas(frame_container, bg=self.bg_color, highlightthickness=0, bd=0)
+        # Se tabs estão habilitadas mas nenhuma existe, criar uma padrão
+        if not self.abas:
+            return self.add_tab("Main")
 
-        # SCROLLBAR CUSTOMIZADO - Estilo moderno
-        scrollbar_frame = tk.Frame(frame_container, bg=self.bg_color, width=8, bd=0)
-        scrollbar_canvas = tk.Canvas(scrollbar_frame, bg="#0a0a15", width=8,
-                                     highlightthickness=0, bd=0)
-        scrollbar_canvas.pack(fill='both', expand=True)
+        # Retornar a aba atual ou a primeira disponível
+        if self.aba_atual and self.aba_atual in self.abas:
+            return self.abas[self.aba_atual]['frame']
 
-        # Variáveis para o scrollbar custom
-        scroll_data = {
-            'dragging': False,
-            'start_y': 0,
-            'thumb': None,
-            'thumb_y': 0,
-            'thumb_height': 100
-        }
+        first_tab = next(iter(self.abas))
+        return self.abas[first_tab]['frame']
 
-        def update_scrollbar(*args):
-            """Atualiza a posição e tamanho do thumb do scrollbar"""
-            try:
-                # Obter informações de scroll
-                first, last = canvas.yview()
-                canvas_height = scrollbar_canvas.winfo_height()
+    def add_tab(self, name: str) -> tk.Frame:
+        """Adiciona uma nova aba ao menu (apenas se tabs estiverem habilitadas)"""
+        if not self.enable_tabs:
+            raise RuntimeError("Tabs não estão habilitadas neste menu. "
+                             "Use get_container() para obter o container principal.")
 
-                if canvas_height < 10:
-                    return
-
-                # Calcular tamanho e posição do thumb
-                visible_ratio = last - first
-                thumb_height = max(30, canvas_height * visible_ratio)
-                thumb_y = first * canvas_height
-
-                # Limpar e desenhar novo thumb
-                scrollbar_canvas.delete("all")
-
-                # Track (fundo)
-                scrollbar_canvas.create_rectangle(
-                    1, 0, 7, canvas_height,
-                    fill="#0a0a15", outline=""
-                )
-
-                # Thumb (indicador)
-                scroll_data['thumb'] = scrollbar_canvas.create_rectangle(
-                    1, thumb_y, 7, thumb_y + thumb_height,
-                    fill=self.theme, outline="", tags="thumb"
-                )
-
-                scroll_data['thumb_height'] = thumb_height
-                scroll_data['thumb_y'] = thumb_y
-
-            except:
-                pass
-
-        def on_scroll_click(event):
-            """Clique no scrollbar"""
-            scroll_data['dragging'] = True
-            scroll_data['start_y'] = event.y
-
-        def on_scroll_drag(event):
-            """Arrastar scrollbar"""
-            if scroll_data['dragging']:
-                canvas_height = scrollbar_canvas.winfo_height()
-                if canvas_height < 10:
-                    return
-
-                # Calcular nova posição
-                delta = event.y - scroll_data['start_y']
-                new_y = scroll_data['thumb_y'] + delta
-
-                # Limites
-                max_y = canvas_height - scroll_data['thumb_height']
-                new_y = max(0, min(new_y, max_y))
-
-                # Converter para fração do canvas
-                fraction = new_y / canvas_height
-
-                # Scroll do canvas
-                canvas.yview_moveto(fraction)
-
-                scroll_data['start_y'] = event.y
-
-        def on_scroll_release(event):
-            """Soltar scrollbar"""
-            scroll_data['dragging'] = False
-
-        # Bindings do scrollbar personalizado
-        scrollbar_canvas.bind("<Button-1>", on_scroll_click)
-        scrollbar_canvas.bind("<B1-Motion>", on_scroll_drag)
-        scrollbar_canvas.bind("<ButtonRelease-1>", on_scroll_release)
-
-        # Conectar canvas com scrollbar
-        canvas.configure(yscrollcommand=lambda f, l: (update_scrollbar(f, l), None)[-1])
-
-        scrollable_frame = tk.Frame(canvas, bg=self.bg_color, bd=0)
-
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: (canvas.configure(scrollregion=canvas.bbox("all")), update_scrollbar())
-        )
-
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-
-        # Bind mousewheel MELHORADO
-        def _on_mousewheel(event):
-            try:
-                # Scroll mais suave
-                canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-                update_scrollbar()
-            except:
-                pass
-
-        # Bind apenas quando mouse está sobre o canvas
-        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
-        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
-
-        scrollbar_frame.pack(side="right", fill="y", padx=(2, 0))
-        canvas.pack(side="left", fill="both", expand=True)
-
-        # Atualizar scrollbar após um delay
-        frame_container.after(100, update_scrollbar)
+        frame_container = self._create_scrollable_container(self.container_principal)
 
         self.abas[name] = {
-            'container': frame_container,
-            'frame': scrollable_frame,
-            'canvas': canvas,
-            'scrollbar_canvas': scrollbar_canvas,
-            'update_scroll': update_scrollbar
+            'container': frame_container.master.master,  # Frame principal
+            'frame': frame_container,  # Frame scrollável
         }
 
-        # Botão da aba
         btn = tk.Button(self.tab_bar, text=name.upper(), bg="#000", fg="gray",
                         activeforeground=self.theme, font=("Arial", 7, "bold"),
                         bd=0, command=lambda n=name: self.show_tab(n),
@@ -1009,22 +1056,23 @@ class ClivMenu:
         if not self.aba_atual:
             self.show_tab(name)
 
-        return scrollable_frame
+        return frame_container
 
-    def show_tab(self, name):
+    def show_tab(self, name: str):
         """Mostra a aba selecionada"""
-        # Esconder todas as abas
+        if not self.enable_tabs:
+            return
+
         for n, tab_data in self.abas.items():
             tab_data['container'].pack_forget()
             self.botoes_abas[n].config(fg="gray", relief='flat')
 
-        # Mostrar aba selecionada
         self.abas[name]['container'].pack(fill='both', expand=True)
         self.botoes_abas[name].config(fg=self.theme, relief='sunken')
         self.aba_atual = name
 
-    def set_alpha(self, val):
-        """Define transparência da janela"""
+    def set_alpha(self, val: float):
+        """Define transparência da janela (0-100)"""
         self.root.attributes("-alpha", max(0.2, min(1.0, float(val) / 100)))
 
     def _start_move(self, event):
@@ -1043,58 +1091,52 @@ class ClivMenu:
     def _on_close(self):
         """Fecha o menu com limpeza completa"""
         try:
-            # Parar tray icon se estiver ativo
             if self.tray_icon:
                 try:
                     self.tray_icon.stop()
-                except:
+                except Exception:
                     pass
 
-            # Parar todas as notificações
             for notif in list(self.notif_manager.notification_windows):
                 try:
                     if notif.winfo_exists():
-                        # Cancelar progresso
                         if hasattr(notif, 'cancel_progress'):
                             notif.cancel_progress()
                         notif.destroy()
-                except:
+                except Exception:
                     pass
 
-            # Limpar lista
             self.notif_manager.notification_windows.clear()
 
-            # Parar áudio se estiver tocando
             try:
                 pygame.mixer.music.stop()
-            except:
+            except Exception:
                 pass
 
-            # Destruir janela principal
             self.root.quit()
             self.root.destroy()
-        except:
+        except Exception:
             pass
 
-    def show_notification(self, title, message, duration=3000, notif_type="info"):
+    def show_notification(self, title: str, message: str,
+                         duration: int = 3000, notif_type: str = "info"):
         """Mostra notificação no canto da tela"""
         self.notif_manager.show(title, message, duration, notif_type)
 
-    def show_message(self, title, message, msg_type="info"):
+    def show_message(self, title: str, message: str, msg_type: str = "info"):
         """Mostra messagebox personalizado"""
         MessageBox.show(title, message, msg_type, self.theme)
 
-    def run(self, hotkey="insert"):
+    def run(self, hotkey: str = "insert"):
         """Inicia o loop principal"""
         try:
             keyboard.add_hotkey(hotkey, self.toggle_visibility)
         except Exception as e:
             print(f"Erro ao registrar hotkey: {e}")
 
-        # Mostrar notificação de boas-vindas
         self.root.after(500, lambda: self.show_notification(
             "Menu Iniciado",
-            "Pressione INSERT para mostrar/ocultar",
+            f"Pressione {hotkey.upper()} para mostrar/ocultar",
             3000,
             "success"
         ))
@@ -1111,54 +1153,73 @@ class ClivMenu:
                 self.root.deiconify()
                 self.aberto = True
                 self._update_particles()
-        except:
+        except Exception:
             pass
 
 
-# --- COMPONENTES MELHORADOS ---
+# ============================================================================
+# WIDGETS INDEPENDENTES COM ESTILO CONFIGURÁVEL
+# ============================================================================
 
 class AudioPlayer:
-    def __init__(self, container, menu_ref, audio_path="music.mp3", autoplay=False, loop=True):
-        self.menu = menu_ref
-        self.shell = tk.Frame(container, bg=menu_ref.bg_color, pady=10, bd=0)
-        self.shell.pack(fill='x', padx=30, pady=10)
+    """Player de áudio integrado"""
 
+    def __init__(self, container: tk.Frame, menu_ref: ClivMenu,
+                 audio_path: str = "music.mp3", autoplay: bool = False,
+                 loop: bool = True, style: Optional[WidgetStyle] = None):
+        """
+        Inicializa o player de áudio
+
+        Args:
+            container: Container pai
+            menu_ref: Referência ao menu CLIV
+            audio_path: Caminho do arquivo de áudio
+            autoplay: Reproduzir automaticamente
+            loop: Repetir em loop
+            style: Estilo customizado
+        """
+        self.menu = menu_ref
         self.audio_path = audio_path
         self.playing = False
         self.loop = loop
-        self.volume = 0.5  # Volume padrão 50%
+        self.volume = 0.5
 
-        # Header do player
-        header_frame = tk.Frame(self.shell, bg=menu_ref.bg_color)
+        if style is None:
+            style = WidgetStyle()
+
+        self.shell = tk.Frame(container, bg=style.bg_color,
+                             pady=style.padding[0], bd=0)
+
+        if style.pack:
+            self.shell.pack(fill='x', padx=style.padding[3], pady=style.margin[0])
+        else:
+            self.shell.place(x=style.x, y=style.y, width=style.width, height=style.height)
+
+        header_frame = tk.Frame(self.shell, bg=style.bg_color)
         header_frame.pack(fill='x', pady=(0, 10))
 
         tk.Label(header_frame, text="🎵 AUDIO PLAYER", fg=menu_ref.theme,
-                bg=menu_ref.bg_color, font=("Impact", 9)).pack(side='left')
+                bg=style.bg_color, font=style.font).pack(side='left')
 
-        # Status label
         self.status_label = tk.Label(header_frame, text="●", fg="red",
-                                     bg=menu_ref.bg_color, font=("Arial", 8))
+                                     bg=style.bg_color, font=("Arial", 8))
         self.status_label.pack(side='right', padx=5)
 
-        # Botões de controle
-        controls_frame = tk.Frame(self.shell, bg=menu_ref.bg_color)
+        controls_frame = tk.Frame(self.shell, bg=style.bg_color)
         controls_frame.pack(fill='x')
 
-        # Play/Pause
         self.play_btn = tk.Button(controls_frame, text="▶", bg=menu_ref.theme,
                                   fg="white", font=("Arial", 12, "bold"), bd=0,
                                   command=self.toggle_play, cursor="hand2", width=4,
                                   activebackground=menu_ref.theme, relief='flat')
         self.play_btn.pack(side='left', padx=2, ipady=5)
 
-        # Stop
         self.stop_btn = tk.Button(controls_frame, text="⏹", bg="#555",
                                   fg="white", font=("Arial", 12, "bold"), bd=0,
                                   command=self.stop_music, cursor="hand2", width=4,
                                   activebackground="#444", relief='flat')
         self.stop_btn.pack(side='left', padx=2, ipady=5)
 
-        # Loop toggle
         self.loop_btn = tk.Button(controls_frame, text="🔁",
                                   bg=menu_ref.theme if loop else "#555",
                                   fg="white", font=("Arial", 10, "bold"), bd=0,
@@ -1166,18 +1227,17 @@ class AudioPlayer:
                                   activebackground=menu_ref.theme, relief='flat')
         self.loop_btn.pack(side='left', padx=2, ipady=5)
 
-        # Volume slider
-        vol_frame = tk.Frame(self.shell, bg=menu_ref.bg_color)
+        vol_frame = tk.Frame(self.shell, bg=style.bg_color)
         vol_frame.pack(fill='x', pady=(10, 0))
 
-        tk.Label(vol_frame, text="🔊", bg=menu_ref.bg_color, fg="white",
+        tk.Label(vol_frame, text="🔊", bg=style.bg_color, fg="white",
                 font=("Arial", 10)).pack(side='left', padx=(0, 5))
 
-        self.vol_canvas = tk.Canvas(vol_frame, height=8, bg=menu_ref.bg_color,
+        self.vol_canvas = tk.Canvas(vol_frame, height=8, bg=style.bg_color,
                                     highlightthickness=0, bd=0)
         self.vol_canvas.pack(side='left', fill='x', expand=True)
 
-        self.vol_label = tk.Label(vol_frame, text="50%", bg=menu_ref.bg_color,
+        self.vol_label = tk.Label(vol_frame, text="50%", bg=style.bg_color,
                                  fg=menu_ref.theme, font=("Arial", 8, "bold"),
                                  width=4)
         self.vol_label.pack(side='right', padx=(5, 0))
@@ -1185,10 +1245,8 @@ class AudioPlayer:
         self.vol_canvas.bind("<Button-1>", self.set_volume)
         self.vol_canvas.bind("<B1-Motion>", self.set_volume)
 
-        # Atualizar volume visual
         self.shell.after(100, self.update_volume_bar)
 
-        # Autoplay
         if autoplay and os.path.exists(audio_path):
             self.shell.after(500, self.play_music)
 
@@ -1201,15 +1259,12 @@ class AudioPlayer:
                 return
 
             self.vol_canvas.delete("all")
-
-            # Barra de fundo
             self.vol_canvas.create_rectangle(0, 2, width, 6, fill="#1a1a1a", outline="")
 
-            # Barra de volume
             vol_width = int(width * self.volume)
             self.vol_canvas.create_rectangle(0, 2, vol_width, 6,
                                             fill=self.menu.theme, outline="")
-        except:
+        except Exception:
             pass
 
     def set_volume(self, event):
@@ -1222,7 +1277,7 @@ class AudioPlayer:
             pygame.mixer.music.set_volume(self.volume)
             self.vol_label.config(text=f"{int(self.volume * 100)}%")
             self.update_volume_bar()
-        except:
+        except Exception:
             pass
 
     def toggle_play(self):
@@ -1259,7 +1314,6 @@ class AudioPlayer:
                         "error"
                     )
             else:
-                # Se já estava tocando, resume
                 pygame.mixer.music.unpause()
                 self.playing = True
                 self.play_btn.config(text="⏸")
@@ -1280,7 +1334,7 @@ class AudioPlayer:
                 self.playing = False
                 self.play_btn.config(text="▶")
                 self.status_label.config(fg="yellow")
-        except:
+        except Exception:
             pass
 
     def stop_music(self):
@@ -1297,7 +1351,7 @@ class AudioPlayer:
                 2000,
                 "info"
             )
-        except:
+        except Exception:
             pass
 
     def toggle_loop(self):
@@ -1311,15 +1365,14 @@ class AudioPlayer:
             self.loop_btn.config(bg="#555")
             self.menu.show_notification("Loop", "Repetição desativada", 2000, "info")
 
-        # Se estiver tocando, reinicia com nova configuração
         if self.playing:
             try:
                 pygame.mixer.music.stop()
                 pygame.mixer.music.play(-1 if self.loop else 0)
-            except:
+            except Exception:
                 pass
 
-    def set_audio_file(self, path):
+    def set_audio_file(self, path: str):
         """Define um novo arquivo de áudio"""
         was_playing = self.playing
 
@@ -1331,7 +1384,7 @@ class AudioPlayer:
         if was_playing and os.path.exists(path):
             self.play_music()
 
-    def get_status(self):
+    def get_status(self) -> Dict[str, Any]:
         """Retorna status atual"""
         return {
             'playing': self.playing,
@@ -1342,44 +1395,92 @@ class AudioPlayer:
 
 
 class ImageSeparator:
-    def __init__(self, container, text, icon_path=None, menu_ref=None):
-        self.shell = tk.Frame(container, bg=menu_ref.bg_color if menu_ref else "",
-                             pady=10, bd=0, highlightthickness=0)
-        self.shell.pack(fill='x', padx=20)
+    """Separador visual com ícone opcional"""
+
+    def __init__(self, container: tk.Frame, text: str,
+                 icon_path: Optional[str] = None, menu_ref: Optional[ClivMenu] = None,
+                 style: Optional[WidgetStyle] = None):
+        """
+        Cria um separador visual
+
+        Args:
+            container: Container pai
+            text: Texto do separador
+            icon_path: Caminho para ícone opcional
+            menu_ref: Referência ao menu
+            style: Estilo customizado
+        """
+        if style is None:
+            style = WidgetStyle()
+
+        theme = menu_ref.theme if menu_ref else "#8e44ad"
+        bg = menu_ref.bg_color if menu_ref else style.bg_color
+
+        self.shell = tk.Frame(container, bg=bg, pady=style.padding[0],
+                             bd=0, highlightthickness=0)
+
+        if style.pack:
+            self.shell.pack(fill='x', padx=style.padding[3])
+        else:
+            self.shell.place(x=style.x, y=style.y, width=style.width, height=style.height)
 
         if icon_path and os.path.exists(icon_path):
             try:
                 img = Image.open(icon_path).resize((16, 16), Image.Resampling.LANCZOS)
                 self.photo = ImageTk.PhotoImage(img)
-                tk.Label(self.shell, image=self.photo,
-                        bg=menu_ref.bg_color if menu_ref else "").pack(side='left', padx=5)
-            except:
+                tk.Label(self.shell, image=self.photo, bg=bg).pack(side='left', padx=5)
+            except Exception:
                 pass
 
-        theme = menu_ref.theme if menu_ref else "#8e44ad"
-        bg = menu_ref.bg_color if menu_ref else ""
-
         tk.Label(self.shell, text=text.upper(), fg=theme, bg=bg,
-                font=("Impact", 10)).pack(side='left')
-        tk.Frame(self.shell, bg=theme, height=2, bd=0).pack(fill='x', side='bottom', pady=2)
+                font=style.font).pack(side='left')
+        tk.Frame(self.shell, bg=theme, height=2, bd=0).pack(fill='x',
+                                                            side='bottom', pady=2)
 
 
 class ModernGraph:
-    def __init__(self, container, label, menu_ref):
+    """Gráfico de linhas moderno"""
+
+    def __init__(self, container: tk.Frame, label: str, menu_ref: ClivMenu,
+                 style: Optional[WidgetStyle] = None, max_values: int = 50):
+        """
+        Cria um gráfico de linhas
+
+        Args:
+            container: Container pai
+            label: Label do gráfico
+            menu_ref: Referência ao menu
+            style: Estilo customizado
+            max_values: Número máximo de valores exibidos
+        """
         self.menu = menu_ref
-        self.shell = tk.Frame(container, bg=menu_ref.bg_color, pady=10, bd=0)
-        self.shell.pack(fill='x', padx=30)
-        self.values = [0] * 50
+        self.values = [0] * max_values
+        self.max_values = max_values
 
-        tk.Label(self.shell, text=label, fg=menu_ref.theme, bg=menu_ref.bg_color,
-                font=("Arial", 7, "bold")).pack(anchor="w")
+        if style is None:
+            style = WidgetStyle()
 
-        self.canvas = tk.Canvas(self.shell, width=350, height=60, bg="#0a0a15",
-                               highlightthickness=1, highlightbackground="#222", bd=0)
+        self.shell = tk.Frame(container, bg=style.bg_color,
+                             pady=style.padding[0], bd=0)
+
+        if style.pack:
+            self.shell.pack(fill='x', padx=style.padding[3])
+        else:
+            self.shell.place(x=style.x, y=style.y, width=style.width, height=style.height)
+
+        tk.Label(self.shell, text=label, fg=menu_ref.theme, bg=style.bg_color,
+                font=style.font).pack(anchor="w")
+
+        canvas_width = style.width if style.width else 350
+        canvas_height = style.height if style.height else 60
+
+        self.canvas = tk.Canvas(self.shell, width=canvas_width, height=canvas_height,
+                               bg="#0a0a15", highlightthickness=1,
+                               highlightbackground="#222", bd=0)
         self.canvas.pack()
         self.update_graph()
 
-    def add_value(self, val):
+    def add_value(self, val: float):
         """Adiciona um valor ao gráfico"""
         self.values.pop(0)
         self.values.append(val)
@@ -1389,78 +1490,101 @@ class ModernGraph:
         """Atualiza o gráfico"""
         self.canvas.delete("all")
 
-        # Grid de fundo
-        for i in range(0, 61, 20):
-            self.canvas.create_line(0, i, 350, i, fill="#1a1a2e", dash=(2, 4))
+        canvas_width = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else 350
+        canvas_height = self.canvas.winfo_height() if self.canvas.winfo_height() > 1 else 60
 
-        # Desenhar linha do gráfico
+        # Grid
+        for i in range(0, canvas_height + 1, 20):
+            self.canvas.create_line(0, i, canvas_width, i, fill="#1a1a2e", dash=(2, 4))
+
+        # Plot
         points = []
+        spacing = canvas_width / len(self.values)
+
         for i, v in enumerate(self.values):
-            x = i * 7
-            y = 60 - min(v, 120) * 0.45
+            x = i * spacing
+            y = canvas_height - min(v, 120) * (canvas_height / 120)
             points.append((x, y))
 
         if len(points) > 1:
-            # Gradiente de preenchimento
             for i in range(len(points)-1):
                 x1, y1 = points[i]
                 x2, y2 = points[i+1]
-                # Linha principal
                 self.canvas.create_line(x1, y1, x2, y2, fill=self.menu.theme,
                                        width=2, tags="plot", smooth=True)
-                # Área preenchida
-                self.canvas.create_polygon(x1, y1, x2, y2, x2, 60, x1, 60,
+                self.canvas.create_polygon(x1, y1, x2, y2, x2, canvas_height,
+                                          x1, canvas_height,
                                           fill=self.menu.theme, outline="",
                                           stipple="gray50", tags="fill")
 
-            # Linha brilhante no topo
             self.canvas.tag_raise("plot")
 
 
 class DynamicColorPicker:
-    def __init__(self, container, var_name, menu_ref):
+    """Seletor de cores dinâmico com roda HSV"""
+
+    def __init__(self, container: tk.Frame, var_name: str, menu_ref: ClivMenu,
+                 style: Optional[WidgetStyle] = None,
+                 callback: Optional[Callable[[str], None]] = None):
+        """
+        Cria um seletor de cores
+
+        Args:
+            container: Container pai
+            var_name: Nome da variável para armazenar a cor
+            menu_ref: Referência ao menu
+            style: Estilo customizado
+            callback: Função chamada quando a cor muda
+        """
         self.menu = menu_ref
         self.var_name = var_name
         self.h, self.s, self.v = 0.0, 1.0, 1.0
+        self.callback = callback
 
-        self.shell = tk.Frame(container, bg=menu_ref.bg_color, pady=10, bd=0)
-        self.shell.pack(fill='x', padx=30)
+        if style is None:
+            style = WidgetStyle()
 
-        # Header
-        head = tk.Frame(self.shell, bg=menu_ref.bg_color)
+        self.shell = tk.Frame(container, bg=style.bg_color,
+                             pady=style.padding[0], bd=0)
+
+        if style.pack:
+            self.shell.pack(fill='x', padx=style.padding[3])
+        else:
+            self.shell.place(x=style.x, y=style.y, width=style.width, height=style.height)
+
+        head = tk.Frame(self.shell, bg=style.bg_color)
         head.pack(fill='x', pady=5)
 
-        tk.Label(head, text=var_name.upper(), fg="white", bg=menu_ref.bg_color,
-                font=("Arial", 8, "bold")).pack(side='left')
+        tk.Label(head, text=var_name.upper(), fg="white", bg=style.bg_color,
+                font=style.font).pack(side='left')
 
         self.preview = tk.Canvas(head, width=40, height=20, highlightthickness=2,
                                 highlightbackground="white", bd=0)
         self.preview.pack(side='right')
 
-        # Roda de cores
         self.wheel_canvas = tk.Canvas(self.shell, width=150, height=150,
-                                      bg=menu_ref.bg_color, highlightthickness=0, bd=0)
+                                      bg=style.bg_color, highlightthickness=0, bd=0)
         self.wheel_canvas.pack(pady=5)
         self._render_hue_wheel()
 
-        # Sliders de saturação e valor
-        sat_frame = tk.Frame(self.shell, bg=menu_ref.bg_color)
+        # Saturação
+        sat_frame = tk.Frame(self.shell, bg=style.bg_color)
         sat_frame.pack(fill='x', pady=2)
-        tk.Label(sat_frame, text="SAT", fg="gray", bg=menu_ref.bg_color,
+        tk.Label(sat_frame, text="SAT", fg="gray", bg=style.bg_color,
                 font=("Arial", 7)).pack(side='left', padx=5)
 
         self.sat_canvas = tk.Canvas(sat_frame, height=10, highlightthickness=0, bd=0)
         self.sat_canvas.pack(side='left', fill='x', expand=True)
 
-        val_frame = tk.Frame(self.shell, bg=menu_ref.bg_color)
+        # Valor (brilho)
+        val_frame = tk.Frame(self.shell, bg=style.bg_color)
         val_frame.pack(fill='x', pady=2)
-        tk.Label(val_frame, text="VAL", fg="gray", bg=menu_ref.bg_color,
+        tk.Label(val_frame, text="VAL", fg="gray", bg=style.bg_color,
                 font=("Arial", 7)).pack(side='left', padx=5)
 
         self.val_canvas = tk.Canvas(val_frame, height=10, highlightthickness=0, bd=0)
         self.val_canvas.pack(side='left', fill='x', expand=True)
 
-        # Bindings
         self.wheel_canvas.bind("<B1-Motion>", self._pick_hue)
         self.wheel_canvas.bind("<Button-1>", self._pick_hue)
         self.sat_canvas.bind("<B1-Motion>", self._pick_sat)
@@ -1495,6 +1619,9 @@ class DynamicColorPicker:
         hex_c = '#%02x%02x%02x' % tuple(int(x*255) for x in rgb)
         self.preview.config(bg=hex_c)
         self.menu.data[self.var_name] = hex_c
+
+        if self.callback:
+            self.callback(hex_c)
 
         # Atualizar barra de saturação
         self.sat_canvas.delete("all")
@@ -1537,86 +1664,149 @@ class DynamicColorPicker:
         self.v = max(0, min(e.x/width, 1.0))
         self._update_all()
 
+    def get_color(self) -> str:
+        """Retorna a cor atual em formato hexadecimal"""
+        rgb = colorsys.hsv_to_rgb(self.h, self.s, self.v)
+        return '#%02x%02x%02x' % tuple(int(x*255) for x in rgb)
+
 
 class ModernSlider:
-    def __init__(self, container, text, de, ate, menu_ref, default=None, callback=None):
+    """Slider moderno com estilo customizável"""
+
+    def __init__(self, container: tk.Frame, text: str, de: int, ate: int,
+                 menu_ref: ClivMenu, default: Optional[int] = None,
+                 callback: Optional[Callable[[int], None]] = None,
+                 style: Optional[WidgetStyle] = None):
+        """
+        Cria um slider
+
+        Args:
+            container: Container pai
+            text: Label do slider
+            de: Valor mínimo
+            ate: Valor máximo
+            menu_ref: Referência ao menu
+            default: Valor padrão
+            callback: Função chamada quando o valor muda
+            style: Estilo customizado
+        """
         self.de, self.ate = de, ate
         self.theme = menu_ref.theme
-        self.bg = menu_ref.bg_color
         self.callback = callback
         self.current_value = default if default is not None else de
 
-        self.shell = tk.Frame(container, bg=self.bg, pady=8, bd=0)
-        self.shell.pack(fill='x', padx=30)
+        if style is None:
+            style = WidgetStyle()
 
-        # Header
-        f = tk.Frame(self.shell, bg=self.bg)
+        bg = menu_ref.bg_color if menu_ref else style.bg_color
+
+        self.shell = tk.Frame(container, bg=bg, pady=style.padding[0], bd=0)
+
+        if style.pack:
+            self.shell.pack(fill='x', padx=style.padding[3])
+        else:
+            self.shell.place(x=style.x, y=style.y, width=style.width, height=style.height)
+
+        f = tk.Frame(self.shell, bg=bg)
         f.pack(fill='x')
 
-        tk.Label(f, text=text, bg=self.bg, fg="white",
-                font=("Arial", 8)).pack(side='left')
+        tk.Label(f, text=text, bg=bg, fg="white",
+                font=style.font).pack(side='left')
 
-        self.lval = tk.Label(f, text=str(self.current_value), bg=self.bg,
-                            fg=self.theme, font=("Arial", 8, "bold"))
+        self.lval = tk.Label(f, text=str(self.current_value), bg=bg,
+                            fg=self.theme, font=style.font)
         self.lval.pack(side='right')
 
-        # Canvas do slider
-        self.canvas = tk.Canvas(self.shell, width=320, height=20, bg=self.bg,
+        canvas_width = style.width if style.width else 320
+        self.canvas = tk.Canvas(self.shell, width=canvas_width, height=20, bg=bg,
                                highlightthickness=0, bd=0)
         self.canvas.pack()
 
         self.canvas.bind("<B1-Motion>", self.update)
         self.canvas.bind("<Button-1>", self.update)
 
-        # Desenhar posição inicial
-        initial_pos = 10 + ((self.current_value - self.de) / (self.ate - self.de)) * 300
+        initial_pos = 10 + ((self.current_value - self.de) / (self.ate - self.de)) * (canvas_width - 20)
         self.update(None, initial_pos)
 
     def update(self, event, mx=None):
         """Atualiza o slider"""
+        canvas_width = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else 320
         x = mx if mx is not None else event.x
-        x = max(10, min(x, 310))
+        x = max(10, min(x, canvas_width - 10))
 
         self.canvas.delete("all")
 
-        # Trilho de fundo
-        self.canvas.create_line(10, 10, 310, 10, fill="#1a1a1a", width=6, capstyle='round')
+        # Track
+        self.canvas.create_line(10, 10, canvas_width - 10, 10,
+                               fill="#1a1a1a", width=6, capstyle='round')
 
-        # Trilho preenchido
-        self.canvas.create_line(10, 10, x, 10, fill=self.theme, width=6, capstyle='round')
+        # Progress
+        self.canvas.create_line(10, 10, x, 10, fill=self.theme,
+                               width=6, capstyle='round')
 
-        # Botão do slider
-        self.canvas.create_oval(x-8, 2, x+8, 18, fill="white", outline=self.theme, width=3)
+        # Thumb
+        self.canvas.create_oval(x-8, 2, x+8, 18, fill="white",
+                               outline=self.theme, width=3)
 
-        # Calcular valor
-        val = int(self.de + ((x-10)/300) * (self.ate - self.de))
+        val = int(self.de + ((x-10)/(canvas_width - 20)) * (self.ate - self.de))
         self.current_value = val
         self.lval.config(text=str(val))
 
         if self.callback:
             self.callback(val)
 
-    def get_value(self):
+    def get_value(self) -> int:
         """Retorna o valor atual"""
         return self.current_value
 
+    def set_value(self, value: int):
+        """Define o valor do slider"""
+        value = max(self.de, min(value, self.ate))
+        canvas_width = self.canvas.winfo_width() if self.canvas.winfo_width() > 1 else 320
+        pos = 10 + ((value - self.de) / (self.ate - self.de)) * (canvas_width - 20)
+        self.update(None, pos)
+
 
 class ModernCheck:
-    def __init__(self, container, text, menu_ref, default=False, callback=None):
+    """Checkbox moderno"""
+
+    def __init__(self, container: tk.Frame, text: str, menu_ref: ClivMenu,
+                 default: bool = False,
+                 callback: Optional[Callable[[bool], None]] = None,
+                 style: Optional[WidgetStyle] = None):
+        """
+        Cria um checkbox
+
+        Args:
+            container: Container pai
+            text: Label do checkbox
+            menu_ref: Referência ao menu
+            default: Estado padrão
+            callback: Função chamada quando o estado muda
+            style: Estilo customizado
+        """
         self.marcado = default
         self.theme = menu_ref.theme
-        self.bg = menu_ref.bg_color
         self.callback = callback
 
-        self.shell = tk.Frame(container, bg=self.bg, pady=5, bd=0)
-        self.shell.pack(fill='x', padx=30)
+        if style is None:
+            style = WidgetStyle()
 
-        self.canvas = tk.Canvas(self.shell, width=18, height=18, bg=self.bg,
+        bg = menu_ref.bg_color if menu_ref else style.bg_color
+
+        self.shell = tk.Frame(container, bg=bg, pady=style.padding[0], bd=0)
+
+        if style.pack:
+            self.shell.pack(fill='x', padx=style.padding[3])
+        else:
+            self.shell.place(x=style.x, y=style.y, width=style.width, height=style.height)
+
+        self.canvas = tk.Canvas(self.shell, width=18, height=18, bg=bg,
                                highlightthickness=0, bd=0, cursor="hand2")
         self.canvas.pack(side='left')
 
-        label = tk.Label(self.shell, text=text, bg=self.bg, fg="white",
-                        font=("Arial", 9), cursor="hand2")
+        label = tk.Label(self.shell, text=text, bg=bg, fg="white",
+                        font=style.font, cursor="hand2")
         label.pack(side='left', padx=10)
 
         self.canvas.bind("<Button-1>", lambda e: self.toggle())
@@ -1629,16 +1819,14 @@ class ModernCheck:
         self.canvas.delete("all")
 
         if self.marcado:
-            # Checkbox marcado
             self.canvas.create_rectangle(1, 1, 17, 17, outline=self.theme,
                                         width=2, fill=self.theme)
-            # Checkmark
             self.canvas.create_line(5, 9, 8, 13, fill="white", width=2, capstyle='round')
             self.canvas.create_line(8, 13, 14, 6, fill="white", width=2, capstyle='round')
         else:
-            # Checkbox vazio
+            bg = self.shell.cget('bg')
             self.canvas.create_rectangle(1, 1, 17, 17, outline=self.theme,
-                                        width=2, fill=self.bg)
+                                        width=2, fill=bg)
 
     def toggle(self):
         """Alterna estado do checkbox"""
@@ -1648,23 +1836,54 @@ class ModernCheck:
         if self.callback:
             self.callback(self.marcado)
 
-    def get_value(self):
+    def get_value(self) -> bool:
         """Retorna estado atual"""
         return self.marcado
 
+    def set_value(self, value: bool):
+        """Define o estado do checkbox"""
+        self.marcado = value
+        self.draw()
+
 
 class KeyBind:
-    def __init__(self, container, text, var_name, menu_ref, default="NONE"):
+    """Widget para captura de teclas"""
+
+    def __init__(self, container: tk.Frame, text: str, var_name: str,
+                 menu_ref: ClivMenu, default: str = "NONE",
+                 callback: Optional[Callable[[str], None]] = None,
+                 style: Optional[WidgetStyle] = None):
+        """
+        Cria um capturador de teclas
+
+        Args:
+            container: Container pai
+            text: Label do widget
+            var_name: Nome da variável
+            menu_ref: Referência ao menu
+            default: Tecla padrão
+            callback: Função chamada quando a tecla muda
+            style: Estilo customizado
+        """
         self.menu = menu_ref
         self.var_name = var_name
         self.key = default
         self.listening = False
+        self.callback = callback
 
-        self.shell = tk.Frame(container, bg=menu_ref.bg_color, pady=5, bd=0)
-        self.shell.pack(fill='x', padx=30)
+        if style is None:
+            style = WidgetStyle()
+
+        self.shell = tk.Frame(container, bg=menu_ref.bg_color,
+                             pady=style.padding[0], bd=0)
+
+        if style.pack:
+            self.shell.pack(fill='x', padx=style.padding[3])
+        else:
+            self.shell.place(x=style.x, y=style.y, width=style.width, height=style.height)
 
         tk.Label(self.shell, text=text, bg=menu_ref.bg_color, fg="white",
-                font=("Arial", 8)).pack(side='left')
+                font=style.font).pack(side='left')
 
         self.btn = tk.Button(self.shell, text=self.key, bg="#1a1a1a",
                             fg=menu_ref.theme, font=("Arial", 7, "bold"),
@@ -1693,16 +1912,40 @@ class KeyBind:
                 self.menu.data[self.var_name] = self.key
                 self.btn.config(text=self.key, fg=self.menu.theme, state='normal')
                 self.listening = False
+
+                if self.callback:
+                    self.callback(self.key)
         except Exception as e:
             self.btn.config(text="ERRO", fg="red", state='normal')
             self.listening = False
 
+    def get_key(self) -> str:
+        """Retorna a tecla atual"""
+        return self.key
+
 
 class ModernButton:
     """Botão moderno com efeitos"""
-    def __init__(self, container, text, menu_ref, callback=None, style="primary"):
+
+    def __init__(self, container: tk.Frame, text: str, menu_ref: ClivMenu,
+                 callback: Optional[Callable] = None, button_style: str = "primary",
+                 style: Optional[WidgetStyle] = None):
+        """
+        Cria um botão
+
+        Args:
+            container: Container pai
+            text: Texto do botão
+            menu_ref: Referência ao menu
+            callback: Função chamada ao clicar
+            button_style: Estilo do botão ('primary', 'success', 'danger', 'warning', 'info')
+            style: Estilo customizado
+        """
         self.menu = menu_ref
         self.callback = callback
+
+        if style is None:
+            style = WidgetStyle()
 
         colors = {
             'primary': menu_ref.theme,
@@ -1712,18 +1955,22 @@ class ModernButton:
             'info': '#3498db'
         }
 
-        color = colors.get(style, menu_ref.theme)
+        color = colors.get(button_style, menu_ref.theme)
 
-        self.shell = tk.Frame(container, bg=menu_ref.bg_color, pady=5, bd=0)
-        self.shell.pack(fill='x', padx=30)
+        self.shell = tk.Frame(container, bg=menu_ref.bg_color,
+                             pady=style.padding[0], bd=0)
+
+        if style.pack:
+            self.shell.pack(fill='x', padx=style.padding[3])
+        else:
+            self.shell.place(x=style.x, y=style.y, width=style.width, height=style.height)
 
         self.btn = tk.Button(self.shell, text=text.upper(), bg=color, fg="white",
-                            font=("Arial", 8, "bold"), bd=0, cursor="hand2",
+                            font=style.font, bd=0, cursor="hand2",
                             command=self._on_click, activebackground=color,
                             relief='flat')
         self.btn.pack(fill='x', ipady=10)
 
-        # Efeitos hover
         self.btn.bind("<Enter>", lambda e: self.btn.config(relief='raised'))
         self.btn.bind("<Leave>", lambda e: self.btn.config(relief='flat'))
 
@@ -1731,101 +1978,3 @@ class ModernButton:
         """Callback do botão"""
         if self.callback:
             self.callback()
-
-
-# --- EXEMPLO DE USO ---
-if __name__ == "__main__":
-    # Teste do Overlay (descomente para testar)
-    """
-    # Criar overlay para o Bloco de Notas
-    overlay = ProcessOverlay("notepad.exe", alpha=0.5)
-
-    # Desenhar alguns elementos
-    overlay.draw_rectangle(50, 50, 200, 100, color="red", thickness=3)
-    overlay.draw_circle(300, 200, 50, color="lime", thickness=2)
-    overlay.draw_text(150, 150, "ESP OVERLAY", color="yellow", font=("Arial", 16, "bold"))
-    overlay.draw_crosshair(400, 300, size=30, color="cyan", thickness=2)
-
-    # Iniciar overlay
-    overlay.run()
-    """
-
-    # Menu principal
-    menu = ClivMenu(
-        title="CLIV1 EXTREME SENSE",
-        theme_color="#8e44ad",
-        part_color="white",
-        part_count=50,
-        part_speed=(0.3, 1.0)
-    )
-
-    # Aba AIMBOT
-    aimbot = menu.add_tab("AIMBOT")
-
-    ImageSeparator(aimbot, "ESP RENDER GL", menu_ref=menu)
-    ModernCheck(aimbot, "Box ESP aimbot", menu, default=True,
-                callback=lambda v: menu.show_notification("ESP", f"Box ESP: {'ON' if v else 'OFF'}", 2000, "info"))
-
-    color_picker = DynamicColorPicker(aimbot, "BOX_COLOR", menu)
-
-    fov_slider = ModernSlider(aimbot, "FOV Radius", 1, 500, menu, default=160,
-                             callback=lambda v: print(f"FOV: {v}"))
-
-    # Aba VISUALS
-    visuals = menu.add_tab("VISUALS")
-
-    ImageSeparator(visuals, "VISUAL SETTINGS", menu_ref=menu)
-
-    graph = ModernGraph(visuals, "FPS MONITOR", menu)
-
-    # Simular FPS variável
-    def update_fps():
-        import random
-        fps = random.randint(50, 144)
-        graph.add_value(fps)
-        menu.root.after(1000, update_fps)
-
-    menu.root.after(1000, update_fps)
-
-    ModernCheck(visuals, "Wallhack", menu, default=False)
-    ModernCheck(visuals, "No Recoil", menu, default=True)
-
-    alpha_slider = ModernSlider(visuals, "Menu Opacity", 20, 100, menu, default=95,
-                               callback=menu.set_alpha)
-
-    # Aba MISC
-    misc = menu.add_tab("MISC")
-
-    ImageSeparator(misc, "MISCELLANEOUS", menu_ref=menu)
-
-    audio = AudioPlayer(misc, menu)
-
-    keybind = KeyBind(misc, "Aimbot Key", "AIMBOT_KEY", menu, default="MOUSE5")
-
-    # Botão para testar overlay
-    ModernButton(misc, "Test Overlay (Notepad)", menu,
-                callback=lambda: menu.show_notification("Overlay", "Abra o Bloco de Notas e descomente o código do overlay!", 4000, "info"),
-                style="info")
-
-    ModernButton(misc, "Test Notification", menu,
-                callback=lambda: menu.show_notification("Test", "Esta é uma notificação de teste!", 4000, "success"),
-                style="success")
-
-    ModernButton(misc, "Show MessageBox", menu,
-                callback=lambda: menu.show_message("Informação", "Este é um messagebox personalizado!", "info"),
-                style="info")
-
-    ModernButton(misc, "Warning Test", menu,
-                callback=lambda: menu.show_notification("Aviso", "Isto é um aviso importante!", 5000, "warning"),
-                style="warning")
-
-    ModernButton(misc, "Error Test", menu,
-                callback=lambda: menu.show_notification("Erro", "Ocorreu um erro no sistema!", 5000, "error"),
-                style="danger")
-
-    # Teste de múltiplas notificações
-    ModernButton(misc, "Spam Notifications (5x)", menu,
-                callback=lambda: [menu.show_notification(f"Notif {i+1}", f"Mensagem de teste número {i+1}", 4000, ["info", "success", "warning"][i%3]) for i in range(5)],
-                style="warning")
-
-    menu.run("insert")
