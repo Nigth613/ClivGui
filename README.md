@@ -445,7 +445,7 @@ Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICE
 
 ## 👥 Autores
 
-- **CLIV Team** - *Trabalho inicial* - [GitHub](https://github.com/clivteam)
+- **CLIV Team** - *Trabalho inicial* - [GitHub](https://github.com/Nigth613/ClivGui)
 
 ## 🙏 Agradecimentos
 
