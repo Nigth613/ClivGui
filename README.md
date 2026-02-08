@@ -421,7 +421,7 @@ pip install pywin32
 
 ## 📝 Changelog
 
-### v1.0.0 (2024-02-07)
+### v1.0.0 (2026-02-07)
 - ✨ Release inicial
 - 🎨 Sistema de menu completo
 - 🎯 Process Overlay funcional
