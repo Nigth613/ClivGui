@@ -31,8 +31,6 @@ share/python-wheels/
 
 # --- Ficheiros indesejados que mencionaste ---
 # Adicionei o 'clivgui' aqui para ele nunca mais ser enviado por erro
-clivgui
-clivgui.exe
 
 # --- IDEs e Editores ---
 .vscode/
